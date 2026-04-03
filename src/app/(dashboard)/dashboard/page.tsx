@@ -41,6 +41,7 @@ export default function DashboardPage() {
   }
 
   const d = data?.data || {};
+  const isMarketOverview = d.is_market_overview === true;
 
   return (
     <div className="space-y-6">
@@ -51,26 +52,37 @@ export default function DashboardPage() {
             {formatDate(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
         </div>
-        {d.last_updated && (
-          <p className="text-xs text-muted-foreground">
-            Updated {formatDate(d.last_updated, "h:mm a")}
-          </p>
-        )}
+        <div className="flex items-center gap-3">
+          {isMarketOverview && (
+            <span className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full font-medium">
+              Market Overview
+            </span>
+          )}
+          {d.last_updated && (
+            <p className="text-xs text-muted-foreground">
+              Updated {formatDate(d.last_updated, "h:mm a")}
+            </p>
+          )}
+        </div>
       </div>
 
       <StatsCards
-        totalValue={d.total_value || 0}
+        totalValue={isMarketOverview ? (d.market_total || 0) : (d.total_value || 0)}
         totalPL={d.total_pnl || 0}
         totalPLPercent={d.total_pnl_pct || 0}
         todayPL={d.daily_change || 0}
         todayPLPercent={d.daily_change_pct || 0}
         holdingsCount={d.holdings_count || 0}
         activeAlerts={d.active_alerts || 0}
+        isMarketOverview={isMarketOverview}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <PerformanceChart data={d.performance || []} />
+          <PerformanceChart
+            data={d.performance || []}
+            title={isMarketOverview ? "Market Performance (BTC)" : "Portfolio Performance"}
+          />
         </div>
         <AllocationChart data={d.allocations || []} />
       </div>

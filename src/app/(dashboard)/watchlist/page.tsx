@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,16 +9,29 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercentage, getChangeColor, cn, getCategoryLabel } from "@/lib/utils";
-import { Search, Plus, X, TrendingUp, TrendingDown, Eye } from "lucide-react";
+import { Search, Plus, X, TrendingUp, TrendingDown, Eye, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import Link from "next/link";
+
+const categoryBadgeColors: Record<string, string> = {
+  STOCK: "bg-blue-500/15 text-blue-500 border-blue-500/20",
+  CRYPTO: "bg-orange-500/15 text-orange-500 border-orange-500/20",
+  METAL: "bg-yellow-500/15 text-yellow-500 border-yellow-500/20",
+};
+
+function getCategoryBadgeClass(category: string) {
+  return categoryBadgeColors[category] || "bg-muted text-muted-foreground";
+}
 
 export default function WatchlistPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<any[] | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("ALL");
   const queryClient = useQueryClient();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: watchlistData, isLoading } = useQuery({
     queryKey: ["watchlist"],
@@ -57,18 +70,50 @@ export default function WatchlistPage() {
     },
   });
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch(`/api/assets/search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await res.json();
-      setSearchResults(data.data || []);
-    } catch {
-      setSearchResults([]);
+  // Debounced search as user types
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
     }
-    setSearching(false);
-  }
+
+    if (searchQuery.trim().length < 2) {
+      setSearchResults(null);
+      setDropdownOpen(false);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/assets/search?q=${encodeURIComponent(searchQuery.trim())}`);
+        const data = await res.json();
+        setSearchResults(data.data || []);
+        setDropdownOpen(true);
+      } catch {
+        setSearchResults([]);
+        setDropdownOpen(true);
+      }
+      setSearching(false);
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const items = watchlistData?.data?.items || [];
   const filtered = activeCategory === "ALL" ? items : items.filter((i: any) => i.category === activeCategory);
@@ -87,46 +132,71 @@ export default function WatchlistPage() {
       {/* Search */}
       <Card glass>
         <CardContent className="p-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div ref={dropdownRef} className="relative">
+            <div className="relative">
+              {searching ? (
+                <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+              ) : (
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              )}
               <Input
-                placeholder="Search stocks, crypto, metals..."
+                placeholder="Type to search..."
                 className="pl-9"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                onFocus={() => {
+                  if (searchResults !== null && searchQuery.trim().length >= 2) {
+                    setDropdownOpen(true);
+                  }
+                }}
               />
             </div>
-            <Button onClick={handleSearch} loading={searching}>Search</Button>
-          </div>
 
-          {searchResults.length > 0 && (
-            <div className="mt-3 space-y-1 max-h-60 overflow-y-auto">
-              {searchResults.map((r: any) => (
-                <div key={`${r.symbol}-${r.category}`} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="secondary" className="text-xs">{getCategoryLabel(r.category)}</Badge>
-                    <div>
-                      <p className="text-sm font-medium">{r.symbol}</p>
-                      <p className="text-xs text-muted-foreground">{r.name}</p>
-                    </div>
+            {dropdownOpen && searchResults !== null && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border bg-popover shadow-lg max-h-72 overflow-y-auto">
+                {searchResults.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No results found
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      addMutation.mutate(r);
-                      setSearchResults([]);
-                      setSearchQuery("");
-                    }}
-                  >
-                    <Plus className="h-3 w-3 mr-1" /> Add
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
+                ) : (
+                  <div className="py-1">
+                    {searchResults.map((r: any) => (
+                      <div
+                        key={`${r.symbol}-${r.category}`}
+                        className="flex items-center justify-between px-3 py-2 hover:bg-accent/50 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Badge
+                            variant="outline"
+                            className={cn("text-xs shrink-0 border", getCategoryBadgeClass(r.category))}
+                          >
+                            {getCategoryLabel(r.category)}
+                          </Badge>
+                          <div className="min-w-0">
+                            <span className="text-sm font-bold">{r.symbol}</span>
+                            <span className="text-xs text-muted-foreground ml-2 truncate">{r.name}</span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 ml-2 h-7 px-2"
+                          onClick={() => {
+                            addMutation.mutate(r);
+                            setSearchResults(null);
+                            setSearchQuery("");
+                            setDropdownOpen(false);
+                          }}
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Add
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -156,7 +226,10 @@ export default function WatchlistPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <Link href={`/asset/${item.symbol}`} className="flex items-center gap-3 flex-1 min-w-0">
-                    <Badge variant="secondary" className="text-[10px] shrink-0">
+                    <Badge
+                      variant="outline"
+                      className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(item.category))}
+                    >
                       {getCategoryLabel(item.category)}
                     </Badge>
                     <div className="min-w-0">
