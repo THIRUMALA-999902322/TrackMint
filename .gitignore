@@ -39,3 +39,5 @@ prisma/migrations/
 
 # tmp
 .tmp/
+
+.vercel
