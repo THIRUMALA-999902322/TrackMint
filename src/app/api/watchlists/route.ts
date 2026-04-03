@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getProviderForCategory } from "@/lib/providers";
-import { getCachedPrice } from "@/lib/redis";
+import { getCachedPrice, setCachedPrice } from "@/lib/redis";
 
 async function getUserId() {
   const supabase = createServerSupabaseClient();
@@ -35,17 +35,34 @@ export async function GET() {
       });
     }
 
-    // Enrich with prices
+    // Enrich with prices (cache-first, fallback to provider)
     const enriched = await Promise.all(
       watchlist.items.map(async (item) => {
         let price = 0;
         let changePercent = 0;
+
+        // Try cache first
         const cached = await getCachedPrice(item.asset.symbol).catch(() => null);
         if (cached) {
           const p = typeof cached === "string" ? JSON.parse(cached) : cached;
           price = p.price || 0;
           changePercent = p.changePercent24h || 0;
         }
+
+        // Cache miss — fetch from provider
+        if (price === 0) {
+          try {
+            const provider = getProviderForCategory(item.asset.category);
+            const priceData = await provider.getPrice(item.asset.symbol);
+            if (priceData && priceData.price > 0) {
+              price = priceData.price;
+              changePercent = priceData.changePercent24h || 0;
+              const ttl = item.asset.category === "METAL" ? 14400 : 300;
+              await setCachedPrice(item.asset.symbol, priceData, ttl).catch(() => {});
+            }
+          } catch {}
+        }
+
         return {
           id: item.id,
           assetId: item.asset_id,

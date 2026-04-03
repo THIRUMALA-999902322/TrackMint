@@ -4,17 +4,27 @@ import { getProviderForCategory } from "@/lib/providers";
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const { searchParams } = new URL(request.url);
   const range = searchParams.get("range") || "1M";
+  const category = searchParams.get("category");
   const symbol = params.id;
 
   try {
-    // Try all providers to find historical data
-    const providers = ["STOCK", "CRYPTO", "METAL"];
     let historical: any[] = [];
 
-    for (const cat of providers) {
-      const provider = getProviderForCategory(cat);
+    // If category is known, try that provider first
+    if (category) {
+      const provider = getProviderForCategory(category);
       historical = await provider.getHistorical(symbol, range as any).catch(() => []);
-      if (historical.length > 0) break;
+    }
+
+    // If still empty, try all providers
+    if (historical.length === 0) {
+      const providers = ["STOCK", "CRYPTO", "METAL"];
+      for (const cat of providers) {
+        if (cat === category) continue; // skip already tried
+        const provider = getProviderForCategory(cat);
+        historical = await provider.getHistorical(symbol, range as any).catch(() => []);
+        if (historical.length > 0) break;
+      }
     }
 
     return NextResponse.json({

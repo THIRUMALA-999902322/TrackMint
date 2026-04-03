@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getCachedPrice } from "@/lib/redis";
+import { getCachedPrice, setCachedPrice } from "@/lib/redis";
+import { getProviderForCategory } from "@/lib/providers";
 
 async function getUserId() {
   const supabase = createServerSupabaseClient();
@@ -17,6 +18,30 @@ async function getUserId() {
   return dbUser.id;
 }
 
+async function fetchPrice(symbol: string, category: string): Promise<{ price: number; changePercent: number }> {
+  // Check cache first
+  try {
+    const cached = await getCachedPrice(symbol);
+    if (cached) {
+      const p = typeof cached === "string" ? JSON.parse(cached) : cached;
+      if (p.price > 0) return { price: p.price, changePercent: p.changePercent24h || 0 };
+    }
+  } catch {}
+
+  // Cache miss — fetch from provider
+  try {
+    const provider = getProviderForCategory(category);
+    const priceData = await provider.getPrice(symbol);
+    if (priceData && priceData.price > 0) {
+      const ttl = category === "METAL" ? 14400 : 300;
+      await setCachedPrice(symbol, priceData, ttl).catch(() => {});
+      return { price: priceData.price, changePercent: priceData.changePercent24h || 0 };
+    }
+  } catch {}
+
+  return { price: 0, changePercent: 0 };
+}
+
 export async function GET() {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -30,12 +55,7 @@ export async function GET() {
 
     const enriched = await Promise.all(
       holdings.map(async (h) => {
-        let currentPrice = 0;
-        const cached = await getCachedPrice(h.asset.symbol).catch(() => null);
-        if (cached) {
-          const p = typeof cached === "string" ? JSON.parse(cached) : cached;
-          currentPrice = p.price || 0;
-        }
+        const { price: currentPrice, changePercent } = await fetchPrice(h.asset.symbol, h.asset.category);
         const qty = Number(h.quantity);
         const buyPrice = Number(h.avg_buy_price);
         return {
@@ -49,6 +69,7 @@ export async function GET() {
           buy_date: h.buy_date,
           notes: h.notes,
           currentPrice,
+          changePercent,
           currentValue: currentPrice * qty,
           unrealizedPL: (currentPrice - buyPrice) * qty,
           unrealizedPLPercent: buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0,
@@ -70,7 +91,6 @@ export async function POST(request: Request) {
   const body = await request.json();
 
   try {
-    // Get or create asset
     let asset = await prisma.asset.findFirst({
       where: { symbol: body.symbol.toUpperCase(), category: body.category },
     });
