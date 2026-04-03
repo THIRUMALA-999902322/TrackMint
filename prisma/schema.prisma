@@ -1,0 +1,247 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// TrackMint - Prisma Schema
+// PostgreSQL via Supabase. Auth is handled by Supabase Auth; the User model
+// stores profile/preference data only (password_hash kept as an optional
+// fallback column).
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum AssetCategory {
+  STOCK
+  CRYPTO
+  METAL
+}
+
+enum AlertConditionType {
+  ABOVE
+  BELOW
+}
+
+enum NewsSentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+// ── User ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  password_hash  String?  // Supabase Auth handles auth; kept for optional local fallback
+  timezone       String   @default("UTC")
+  base_currency  String   @default("USD")
+  digest_time    String   @default("07:00")
+  digest_enabled Boolean  @default(true)
+  is_verified    Boolean  @default(false)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  watchlists    Watchlist[]
+  holdings      Holding[]
+  journal_entries JournalEntry[]
+  alerts        Alert[]
+  email_logs    EmailLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// ── Asset ────────────────────────────────────────────────────────────────────
+
+model Asset {
+  id              String        @id @default(cuid())
+  symbol          String
+  name            String
+  category        AssetCategory
+  exchange        String?
+  source_provider String
+  logo_url        String?
+  metadata_json   Json?
+  created_at      DateTime      @default(now())
+
+  // Relations
+  watchlist_items WatchlistItem[]
+  holdings        Holding[]
+  alerts          Alert[]
+  price_cache     PriceCache?
+  news_items      NewsItem[]
+
+  @@unique([symbol, category], name: "uq_asset_symbol_category")
+  @@index([symbol])
+  @@index([category])
+  @@map("assets")
+}
+
+// ── Watchlist ────────────────────────────────────────────────────────────────
+
+model Watchlist {
+  id         String   @id @default(cuid())
+  user_id    String
+  name       String   @default("Default")
+  created_at DateTime @default(now())
+
+  // Relations
+  user  User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
+
+  @@index([user_id])
+  @@map("watchlists")
+}
+
+// ── WatchlistItem ────────────────────────────────────────────────────────────
+
+model WatchlistItem {
+  id           String   @id @default(cuid())
+  watchlist_id String
+  asset_id     String
+  created_at   DateTime @default(now())
+
+  // Relations
+  watchlist Watchlist @relation(fields: [watchlist_id], references: [id], onDelete: Cascade)
+  asset     Asset     @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@unique([watchlist_id, asset_id], name: "uq_watchlist_asset")
+  @@index([watchlist_id])
+  @@index([asset_id])
+  @@map("watchlist_items")
+}
+
+// ── Holding ──────────────────────────────────────────────────────────────────
+
+model Holding {
+  id            String   @id @default(cuid())
+  user_id       String
+  asset_id      String
+  quantity      Decimal  @db.Decimal(20, 8)
+  avg_buy_price Decimal  @db.Decimal(20, 8)
+  fees          Decimal  @default(0) @db.Decimal(20, 8)
+  buy_date      DateTime
+  notes         String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([asset_id])
+  @@index([user_id, asset_id])
+  @@map("holdings")
+}
+
+// ── JournalEntry ─────────────────────────────────────────────────────────────
+
+model JournalEntry {
+  id           String   @id @default(cuid())
+  user_id      String
+  entry_date   DateTime
+  pnl_amount   Decimal  @db.Decimal(20, 8)
+  strategy_tag String?
+  notes        String?
+  created_at   DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([user_id, entry_date])
+  @@index([strategy_tag])
+  @@map("journal_entries")
+}
+
+// ── Alert ────────────────────────────────────────────────────────────────────
+
+model Alert {
+  id                String             @id @default(cuid())
+  user_id           String
+  asset_id          String
+  condition_type    AlertConditionType
+  target_price      Decimal            @db.Decimal(20, 8)
+  is_active         Boolean            @default(true)
+  cooldown_minutes  Int                @default(60)
+  last_triggered_at DateTime?
+  created_at        DateTime           @default(now())
+
+  // Relations
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([asset_id])
+  @@index([is_active])
+  @@index([user_id, is_active])
+  @@map("alerts")
+}
+
+// ── PriceCache ───────────────────────────────────────────────────────────────
+
+model PriceCache {
+  id              String   @id @default(cuid())
+  asset_id        String   @unique
+  price           Decimal  @db.Decimal(20, 8)
+  currency        String   @default("USD")
+  source_provider String
+  fetched_at      DateTime
+
+  // Relations
+  asset Asset @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@index([asset_id])
+  @@index([fetched_at])
+  @@map("price_cache")
+}
+
+// ── NewsItem ─────────────────────────────────────────────────────────────────
+
+model NewsItem {
+  id           String         @id @default(cuid())
+  asset_id     String
+  headline     String
+  url          String
+  source_name  String
+  sentiment    NewsSentiment?
+  published_at DateTime
+  created_at   DateTime       @default(now())
+
+  // Relations
+  asset Asset @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@index([asset_id])
+  @@index([published_at])
+  @@index([asset_id, published_at])
+  @@map("news_items")
+}
+
+// ── EmailLog ─────────────────────────────────────────────────────────────────
+
+model EmailLog {
+  id         String   @id @default(cuid())
+  user_id    String
+  email_type String
+  subject    String
+  status     String
+  sent_at    DateTime
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([user_id, email_type])
+  @@index([sent_at])
+  @@map("email_logs")
+}

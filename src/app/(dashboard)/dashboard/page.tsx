@@ -1,0 +1,90 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { StatsCards } from "@/components/dashboard/stats-cards";
+import { AllocationChart } from "@/components/dashboard/allocation-chart";
+import { PerformanceChart } from "@/components/dashboard/performance-chart";
+import { RecentNews } from "@/components/dashboard/recent-news";
+import { TopMovers } from "@/components/dashboard/top-movers";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatDate } from "@/lib/utils";
+
+async function fetchDashboard() {
+  const res = await fetch("/api/dashboard/summary");
+  if (!res.ok) throw new Error("Failed to fetch dashboard");
+  return res.json();
+}
+
+export default function DashboardPage() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: fetchDashboard,
+    refetchInterval: 60000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground text-sm">Loading your portfolio...</p>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Skeleton className="h-[280px] lg:col-span-2" />
+          <Skeleton className="h-[280px]" />
+        </div>
+      </div>
+    );
+  }
+
+  const d = data?.data || {};
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground text-sm">
+            {formatDate(new Date(), "EEEE, MMMM d, yyyy")}
+          </p>
+        </div>
+        {d.last_updated && (
+          <p className="text-xs text-muted-foreground">
+            Updated {formatDate(d.last_updated, "h:mm a")}
+          </p>
+        )}
+      </div>
+
+      <StatsCards
+        totalValue={d.total_value || 0}
+        totalPL={d.total_pnl || 0}
+        totalPLPercent={d.total_pnl_pct || 0}
+        todayPL={d.daily_change || 0}
+        todayPLPercent={d.daily_change_pct || 0}
+        holdingsCount={d.holdings_count || 0}
+        activeAlerts={d.active_alerts || 0}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <PerformanceChart data={d.performance || []} />
+        </div>
+        <AllocationChart data={d.allocations || []} />
+      </div>
+
+      <TopMovers
+        gainers={d.top_gainers || []}
+        losers={d.top_losers || []}
+      />
+
+      <RecentNews news={d.news || []} />
+
+      <p className="text-xs text-muted-foreground text-center py-4">
+        Data provided for informational purposes only. Not financial advice.
+      </p>
+    </div>
+  );
+}
