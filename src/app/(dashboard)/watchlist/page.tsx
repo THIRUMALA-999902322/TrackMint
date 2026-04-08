@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatPercentage, getChangeColor, cn, getCategoryLabel } from "@/lib/utils";
+import { formatCurrency, formatPercentage, cn, getCategoryLabel } from "@/lib/utils";
 import { Search, Plus, X, TrendingUp, TrendingDown, Eye, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import Link from "next/link";
 
 const categoryBadgeColors: Record<string, string> = {
   STOCK: "bg-blue-500/15 text-blue-500 border-blue-500/20",
@@ -23,7 +24,139 @@ function getCategoryBadgeClass(category: string) {
   return categoryBadgeColors[category] || "bg-muted text-muted-foreground";
 }
 
+interface WatchlistItem {
+  id: string;
+  assetId: string;
+  symbol: string;
+  name: string;
+  category: string;
+  price: number;
+  changePercent: number;
+  createdAt: string;
+}
+
+function Sparkline({ symbol, category, positive }: { symbol: string; category: string; positive: boolean }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["sparkline", symbol, category],
+    queryFn: async () => {
+      const res = await fetch(`/api/assets/${encodeURIComponent(symbol)}?range=1M&category=${category}`);
+      if (!res.ok) throw new Error("Failed");
+      const json = await res.json();
+      const hist = (json?.data?.historical || []) as Array<{ time: number; close: number }>;
+      return hist.map((h) => ({ t: h.time, v: h.close }));
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  if (isLoading) {
+    return <Skeleton className="h-12 w-full" />;
+  }
+
+  if (!data || data.length === 0) {
+    return <div className="h-12 w-full flex items-center justify-center text-[10px] text-muted-foreground">No chart data</div>;
+  }
+
+  const color = positive ? "hsl(142 71% 45%)" : "hsl(0 84% 60%)";
+
+  return (
+    <div className="h-12 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+          <YAxis hide domain={["dataMin", "dataMax"]} />
+          <Line
+            type="monotone"
+            dataKey="v"
+            stroke={color}
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function TickerCard({
+  item,
+  index,
+  onRemove,
+  onClick,
+}: {
+  item: WatchlistItem;
+  index: number;
+  onRemove: (id: string) => void;
+  onClick: () => void;
+}) {
+  const positive = (item.changePercent || 0) >= 0;
+  const TrendIcon = positive ? TrendingUp : TrendingDown;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onClick();
+      }}
+      className={cn(
+        "group relative rounded-xl border bg-card/40 backdrop-blur-md p-4 cursor-pointer",
+        "transition-all duration-300 hover:-translate-y-1 hover:border-primary/50",
+        "hover:shadow-[0_0_30px_-5px_hsl(var(--primary)/0.35)]",
+        "animate-fade-in-up opacity-0"
+      )}
+      style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge
+            variant="outline"
+            className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(item.category))}
+          >
+            {getCategoryLabel(item.category)}
+          </Badge>
+          <span className="text-base font-bold tracking-tight truncate">{item.symbol}</span>
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 -mr-1 -mt-1 text-muted-foreground opacity-60 hover:opacity-100 hover:text-loss"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(item.id);
+          }}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <p className="mt-1 text-xs text-muted-foreground truncate">{item.name}</p>
+
+      <div className="mt-3 flex items-end justify-between gap-2">
+        <div className="text-2xl font-bold tracking-tight">{formatCurrency(item.price || 0)}</div>
+        <div
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
+            positive
+              ? "bg-green-500/15 text-green-500"
+              : "bg-red-500/15 text-red-500"
+          )}
+        >
+          <TrendIcon className="h-3 w-3" />
+          {formatPercentage(item.changePercent || 0)}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <Sparkline symbol={item.symbol} category={item.category} positive={positive} />
+      </div>
+    </div>
+  );
+}
+
 export default function WatchlistPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
@@ -32,6 +165,7 @@ export default function WatchlistPage() {
   const queryClient = useQueryClient();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: watchlistData, isLoading } = useQuery({
     queryKey: ["watchlist"],
@@ -70,19 +204,14 @@ export default function WatchlistPage() {
     },
   });
 
-  // Debounced search as user types
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     if (searchQuery.trim().length < 2) {
       setSearchResults(null);
       setDropdownOpen(false);
       setSearching(false);
       return;
     }
-
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
       try {
@@ -96,15 +225,11 @@ export default function WatchlistPage() {
       }
       setSearching(false);
     }, 300);
-
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [searchQuery]);
 
-  // Click outside to close dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -115,8 +240,8 @@ export default function WatchlistPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const items = watchlistData?.data?.items || [];
-  const filtered = activeCategory === "ALL" ? items : items.filter((i: any) => i.category === activeCategory);
+  const items: WatchlistItem[] = watchlistData?.data?.items || [];
+  const filtered = activeCategory === "ALL" ? items : items.filter((i) => i.category === activeCategory);
 
   return (
     <div className="space-y-6">
@@ -140,7 +265,8 @@ export default function WatchlistPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               )}
               <Input
-                placeholder="Type to search..."
+                ref={searchInputRef}
+                placeholder="Search stocks, crypto, metals..."
                 className="pl-9"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -155,9 +281,7 @@ export default function WatchlistPage() {
             {dropdownOpen && searchResults !== null && (
               <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border bg-popover shadow-lg max-h-72 overflow-y-auto">
                 {searchResults.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">
-                    No results found
-                  </div>
+                  <div className="p-4 text-center text-sm text-muted-foreground">No results found</div>
                 ) : (
                   <div className="py-1">
                     {searchResults.map((r: any) => (
@@ -210,52 +334,43 @@ export default function WatchlistPage() {
         </TabsList>
       </Tabs>
 
-      {/* Watchlist items */}
+      {/* Watchlist grid */}
       {isLoading ? (
-        <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-16" />)}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Skeleton key={i} className="h-48 rounded-xl" />
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <Card glass>
-          <CardContent className="p-8 text-center">
-            <p className="text-muted-foreground">No assets in your watchlist. Search above to add some.</p>
+          <CardContent className="p-12 text-center flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-primary/10 blur-2xl" />
+              <div className="relative rounded-full bg-primary/10 border border-primary/20 p-6">
+                <Eye className="h-12 w-12 text-primary" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold">Your watchlist is empty</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Track the assets you care about. Search for stocks, crypto, or metals to get started.
+              </p>
+            </div>
+            <Button onClick={() => searchInputRef.current?.focus()} className="mt-2">
+              <Search className="h-4 w-4 mr-2" /> Search assets
+            </Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((item: any) => (
-            <Card key={item.id} glass>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <Link href={`/asset/${item.symbol}`} className="flex items-center gap-3 flex-1 min-w-0">
-                    <Badge
-                      variant="outline"
-                      className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(item.category))}
-                    >
-                      {getCategoryLabel(item.category)}
-                    </Badge>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold">{item.symbol}</p>
-                      <p className="text-xs text-muted-foreground truncate">{item.name}</p>
-                    </div>
-                  </Link>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{formatCurrency(item.price || 0)}</p>
-                      <p className={cn("text-xs", getChangeColor(item.changePercent || 0))}>
-                        {formatPercentage(item.changePercent || 0)}
-                      </p>
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-loss"
-                      onClick={() => removeMutation.mutate(item.id)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((item, idx) => (
+            <TickerCard
+              key={item.id}
+              item={item}
+              index={idx}
+              onRemove={(id) => removeMutation.mutate(id)}
+              onClick={() => router.push(`/asset/${item.symbol}`)}
+            />
           ))}
         </div>
       )}

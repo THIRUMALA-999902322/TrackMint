@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate, cn, getCategoryLabel } from "@/lib/utils";
-import { Plus, Bell, BellOff, ArrowUp, ArrowDown, Trash2, Search, X, Loader2, TrendingUp } from "lucide-react";
+import { Plus, Bell, BellOff, ArrowUp, ArrowDown, Trash2, Search, X, Loader2, TrendingUp, Pencil } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 function getCategoryBadgeClass(cat: string) {
@@ -30,6 +30,9 @@ export default function AlertsPage() {
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [conditionType, setConditionType] = useState("ABOVE");
   const [targetPrice, setTargetPrice] = useState("");
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [notifyEmail, setNotifyEmail] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const queryClient = useQueryClient();
 
@@ -82,6 +85,19 @@ export default function AlertsPage() {
     setTargetPrice("");
     setSearchQuery("");
     setSearchResults(null);
+    setEmailEnabled(true);
+    setNotifyEmail("");
+    setEditingId(null);
+  }
+
+  function openEdit(a: any) {
+    setEditingId(a.id);
+    setSelectedAsset({ symbol: a.symbol, name: a.name, category: a.category });
+    setConditionType(a.condition_type);
+    setTargetPrice(String(a.target_price));
+    setEmailEnabled(a.email_enabled !== false);
+    setNotifyEmail(a.notify_email || "");
+    setAddOpen(true);
   }
 
   const { data, isLoading } = useQuery({
@@ -112,6 +128,24 @@ export default function AlertsPage() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const res = await fetch(`/api/alerts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      setAddOpen(false);
+      resetForm();
+      toast({ title: "Alert updated", variant: "success" });
+    },
+  });
+
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
       await fetch(`/api/alerts/${id}`, {
@@ -136,19 +170,37 @@ export default function AlertsPage() {
   const alerts = data?.data || [];
   const activeCount = alerts.filter((a: any) => a.is_active).length;
 
-  function handleCreate() {
+  function handleSave() {
     if (!selectedAsset || !targetPrice) {
       toast({ title: "Please select an asset and set a target price", variant: "error" });
       return;
     }
-    addMutation.mutate({
-      symbol: selectedAsset.symbol,
-      name: selectedAsset.name,
-      category: selectedAsset.category,
-      condition_type: conditionType,
-      target_price: parseFloat(targetPrice),
-      cooldown_minutes: 60,
-    });
+    if (notifyEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notifyEmail)) {
+      toast({ title: "Please enter a valid email address", variant: "error" });
+      return;
+    }
+    if (editingId) {
+      editMutation.mutate({
+        id: editingId,
+        payload: {
+          condition_type: conditionType,
+          target_price: parseFloat(targetPrice),
+          email_enabled: emailEnabled,
+          notify_email: notifyEmail || null,
+        },
+      });
+    } else {
+      addMutation.mutate({
+        symbol: selectedAsset.symbol,
+        name: selectedAsset.name,
+        category: selectedAsset.category,
+        condition_type: conditionType,
+        target_price: parseFloat(targetPrice),
+        cooldown_minutes: 60,
+        email_enabled: emailEnabled,
+        notify_email: notifyEmail || null,
+      });
+    }
   }
 
   return (
@@ -161,7 +213,7 @@ export default function AlertsPage() {
         <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> New Alert</Button></DialogTrigger>
           <DialogContent className="sm:max-w-md">
-            <DialogHeader><DialogTitle>Create Price Alert</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{editingId ? "Edit Price Alert" : "Create Price Alert"}</DialogTitle></DialogHeader>
             <div className="space-y-5 py-4">
 
               {/* Step 1: Search asset */}
@@ -273,17 +325,41 @@ export default function AlertsPage() {
                       </p>
                     )}
                   </div>
+
+                  {/* Step 4: Email notification settings */}
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-sm font-medium">Email me when triggered</span>
+                      <input
+                        type="checkbox"
+                        checked={emailEnabled}
+                        onChange={(e) => setEmailEnabled(e.target.checked)}
+                        className="h-4 w-4 accent-primary cursor-pointer"
+                      />
+                    </label>
+                    {emailEnabled && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Send to (optional)</Label>
+                        <Input
+                          type="email"
+                          placeholder="Leave blank to use your account email"
+                          value={notifyEmail}
+                          onChange={(e) => setNotifyEmail(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => { setAddOpen(false); resetForm(); }}>Cancel</Button>
               <Button
-                loading={addMutation.isPending}
-                onClick={handleCreate}
+                loading={addMutation.isPending || editMutation.isPending}
+                onClick={handleSave}
                 disabled={!selectedAsset || !targetPrice}
               >
-                Create Alert
+                {editingId ? "Save Changes" : "Create Alert"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -337,6 +413,9 @@ export default function AlertsPage() {
                     )}
                     <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => toggleMutation.mutate({ id: a.id, isActive: a.is_active })}>
                       {a.is_active ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(a)}>
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-loss" onClick={() => deleteMutation.mutate(a.id)}>
                       <Trash2 className="h-4 w-4" />

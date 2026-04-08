@@ -38,15 +38,18 @@ export async function POST(request: Request) {
       if (alert.condition_type === "BELOW" && currentPrice <= target) shouldTrigger = true;
 
       if (shouldTrigger) {
-        // Send email
-        await sendAlertEmail(
-          alert.user.email,
-          alert.asset.name,
-          alert.asset.symbol,
-          currentPrice,
-          target,
-          alert.condition_type
-        );
+        // Send email (only if enabled)
+        if (alert.email_enabled) {
+          const recipient = alert.notify_email || alert.user.email;
+          await sendAlertEmail(
+            recipient,
+            alert.asset.name,
+            alert.asset.symbol,
+            currentPrice,
+            target,
+            alert.condition_type
+          );
+        }
 
         // Update last triggered
         await prisma.alert.update({

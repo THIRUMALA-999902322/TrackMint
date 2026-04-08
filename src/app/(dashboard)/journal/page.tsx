@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency, formatPercentage, formatDate, getChangeColor, cn } from "@/lib/utils";
-import { Plus, BookOpen, TrendingUp, TrendingDown, Target, Award, Calendar } from "lucide-react";
+import { Plus, BookOpen, TrendingUp, TrendingDown, Target, Award, Calendar, BarChart3, LineChart as LineChartIcon } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, Cell, ReferenceLine } from "recharts";
 
 export default function JournalPage() {
   const [addOpen, setAddOpen] = useState(false);
@@ -71,6 +72,72 @@ export default function JournalPage() {
     const d = formatDate(e.entry_date, "yyyy-MM-dd");
     calendarData[d] = (calendarData[d] || 0) + parseFloat(e.pnl_amount);
   });
+
+  // ── P/L Performance metrics (client-side) ──────────────────────────────────
+  // Entries in the schema carry a direct pnl_amount. If a richer entry shape
+  // is ever introduced (entry_price/exit_price/quantity/side), compute from
+  // those, skipping entries without an exit_price.
+  const computePnl = (e: any): number | null => {
+    if (e.pnl_amount !== undefined && e.pnl_amount !== null && e.pnl_amount !== "") {
+      const n = parseFloat(e.pnl_amount);
+      return isNaN(n) ? null : n;
+    }
+    if (e.exit_price === undefined || e.exit_price === null || e.exit_price === "") return null;
+    const entryP = parseFloat(e.entry_price);
+    const exitP = parseFloat(e.exit_price);
+    const qty = parseFloat(e.quantity);
+    if (isNaN(entryP) || isNaN(exitP) || isNaN(qty)) return null;
+    const dir = String(e.side || "").toUpperCase() === "SHORT" ? -1 : 1;
+    return (exitP - entryP) * qty * dir;
+  };
+
+  type PnlEntry = { pnl: number; date: Date; dateKey: string; bucket: string; raw: any };
+  const pnlEntries: PnlEntry[] = entries
+    .map((e: any): PnlEntry | null => {
+      const pnl = computePnl(e);
+      if (pnl === null) return null;
+      const date = new Date(e.entry_date);
+      return {
+        pnl,
+        date,
+        dateKey: formatDate(e.entry_date, "yyyy-MM-dd"),
+        bucket: e.symbol || e.strategy_tag || "Untagged",
+        raw: e,
+      };
+    })
+    .filter((x: PnlEntry | null): x is PnlEntry => x !== null);
+
+  // Ascending by date for cumulative chart
+  const pnlAsc = [...pnlEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const totalPnl = pnlAsc.reduce((s, e) => s + e.pnl, 0);
+  const winCount = pnlAsc.filter((e) => e.pnl > 0).length;
+  const winRate = pnlAsc.length > 0 ? (winCount / pnlAsc.length) * 100 : 0;
+  const bestTrade = pnlAsc.length > 0 ? Math.max(...pnlAsc.map((e) => e.pnl)) : 0;
+  const worstTrade = pnlAsc.length > 0 ? Math.min(...pnlAsc.map((e) => e.pnl)) : 0;
+
+  // Cumulative P/L series
+  let running = 0;
+  const cumulativeSeries = pnlAsc.map((e) => {
+    running += e.pnl;
+    return { date: formatDate(e.date, "MMM dd"), value: running };
+  });
+  const cumEndingPositive = cumulativeSeries.length > 0
+    ? cumulativeSeries[cumulativeSeries.length - 1].value >= 0
+    : true;
+  const cumColor = cumEndingPositive ? "#00d68f" : "#ff6b6b";
+
+  // P/L by bucket (symbol, fallback strategy) — top 10 by absolute P/L
+  const bucketMap: Record<string, number> = {};
+  pnlAsc.forEach((e) => {
+    bucketMap[e.bucket] = (bucketMap[e.bucket] || 0) + e.pnl;
+  });
+  const bucketSeries = Object.entries(bucketMap)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .slice(0, 10);
+
+  const hasPerfData = pnlAsc.length > 0;
 
   return (
     <div className="space-y-6">
@@ -147,6 +214,221 @@ export default function JournalPage() {
           <div className="flex items-center gap-2 mb-1"><Calendar className="h-4 w-4 text-primary" /><span className="text-xs text-muted-foreground">Streak</span></div>
           <p className={cn("text-lg font-bold", getChangeColor(summary.streak || 0))}>{summary.streak || 0} days</p>
         </CardContent></Card>
+      </div>
+
+      {/* ── Performance (derived P/L) ─────────────────────────────────── */}
+      <div className="space-y-4 animate-fade-in-up">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">Performance</h2>
+        </div>
+
+        {!hasPerfData ? (
+          <Card glass>
+            <CardContent className="p-10 flex flex-col items-center justify-center text-center gap-3">
+              <BookOpen className="h-10 w-10 text-muted-foreground/60" />
+              <div>
+                <p className="text-sm font-medium">No performance data yet</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add journal entries to see your P/L curve, win rate, and best/worst trades.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* 4 stat tiles */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card glass>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Target className="h-4 w-4 text-primary" />
+                    <span className="text-xs text-muted-foreground">Total P/L</span>
+                  </div>
+                  <p className={cn("text-lg font-bold", getChangeColor(totalPnl))}>
+                    {totalPnl >= 0 ? "+" : ""}
+                    {formatCurrency(totalPnl)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card glass>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Award className="h-4 w-4 text-primary" />
+                    <span className="text-xs text-muted-foreground">Win Rate</span>
+                  </div>
+                  <p className="text-lg font-bold">{winRate.toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {winCount} / {pnlAsc.length} trades
+                  </p>
+                </CardContent>
+              </Card>
+              <Card glass>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp className="h-4 w-4 text-profit" />
+                    <span className="text-xs text-muted-foreground">Best Trade</span>
+                  </div>
+                  <p className="text-lg font-bold text-profit">
+                    {formatCurrency(bestTrade)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card glass>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingDown className="h-4 w-4 text-loss" />
+                    <span className="text-xs text-muted-foreground">Worst Trade</span>
+                  </div>
+                  <p className="text-lg font-bold text-loss">
+                    {formatCurrency(worstTrade)}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Cumulative P/L Area Chart */}
+            <Card glass>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <LineChartIcon className="h-4 w-4" /> Cumulative P/L
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={cumulativeSeries} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+                      <defs>
+                        <linearGradient id="journalCumGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={cumColor} stopOpacity={0.28} />
+                          <stop offset="50%" stopColor={cumColor} stopOpacity={0.1} />
+                          <stop offset="100%" stopColor={cumColor} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="date"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        interval={Math.max(0, Math.floor(cumulativeSeries.length / 6) - 1)}
+                        dy={8}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        domain={["dataMin", "dataMax"]}
+                        tickFormatter={(val) =>
+                          Math.abs(val) >= 1000 ? `$${(val / 1000).toFixed(1)}k` : `$${val.toFixed(0)}`
+                        }
+                        width={54}
+                      />
+                      <ReferenceLine y={0} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                      <RTooltip
+                        content={({ payload, active }) => {
+                          if (!active || !payload?.length) return null;
+                          const v = payload[0].value as number;
+                          return (
+                            <div
+                              className="rounded-xl px-4 py-3 text-sm shadow-xl border"
+                              style={{
+                                background: "hsl(var(--card) / 0.85)",
+                                backdropFilter: "blur(12px)",
+                                borderColor: "hsl(var(--border) / 0.5)",
+                              }}
+                            >
+                              <p className="text-muted-foreground text-xs mb-1">
+                                {payload[0].payload.date}
+                              </p>
+                              <p className={cn("font-semibold text-base", getChangeColor(v))}>
+                                {v >= 0 ? "+" : ""}
+                                {formatCurrency(v)}
+                              </p>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Area
+                        type="monotoneX"
+                        dataKey="value"
+                        stroke={cumColor}
+                        fill="url(#journalCumGrad)"
+                        strokeWidth={2.5}
+                        dot={false}
+                        animationDuration={1200}
+                        animationEasing="ease-out"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* P/L by Symbol / Strategy Bar Chart */}
+            <Card glass>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" /> P/L by Symbol
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={bucketSeries} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+                      <XAxis
+                        dataKey="name"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        dy={6}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                        tickFormatter={(val) =>
+                          Math.abs(val) >= 1000 ? `$${(val / 1000).toFixed(1)}k` : `$${val.toFixed(0)}`
+                        }
+                        width={54}
+                      />
+                      <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                      <RTooltip
+                        cursor={{ fill: "hsl(var(--muted) / 0.25)" }}
+                        content={({ payload, active }) => {
+                          if (!active || !payload?.length) return null;
+                          const v = payload[0].value as number;
+                          return (
+                            <div
+                              className="rounded-xl px-4 py-3 text-sm shadow-xl border"
+                              style={{
+                                background: "hsl(var(--card) / 0.85)",
+                                backdropFilter: "blur(12px)",
+                                borderColor: "hsl(var(--border) / 0.5)",
+                              }}
+                            >
+                              <p className="text-muted-foreground text-xs mb-1">
+                                {payload[0].payload.name}
+                              </p>
+                              <p className={cn("font-semibold text-base", getChangeColor(v))}>
+                                {v >= 0 ? "+" : ""}
+                                {formatCurrency(v)}
+                              </p>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} animationDuration={1000}>
+                        {bucketSeries.map((d, i) => (
+                          <Cell key={i} fill={d.value >= 0 ? "#00d68f" : "#ff6b6b"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Calendar Heatmap */}

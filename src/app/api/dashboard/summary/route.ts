@@ -5,6 +5,58 @@ import { getCachedPrice } from "@/lib/redis";
 import { newsProvider, cryptoProvider, stocksProvider, metalsProvider } from "@/lib/providers";
 import { format, subDays } from "date-fns";
 
+const TRUSTED_NEWS_HOSTS = [
+  "reuters.com",
+  "bloomberg.com",
+  "cnbc.com",
+  "wsj.com",
+  "ft.com",
+  "marketwatch.com",
+  "finance.yahoo.com",
+  "yahoo.com",
+  "coindesk.com",
+  "cointelegraph.com",
+  "theblock.co",
+  "apnews.com",
+  "forbes.com",
+  "businessinsider.com",
+  "seekingalpha.com",
+  "investing.com",
+];
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function curateNews(articles: any[]): any[] {
+  if (!Array.isArray(articles)) return [];
+  const mapped = articles.map((a) => {
+    const host = hostFromUrl(a.url || "");
+    const favicon = host
+      ? `https://www.google.com/s2/favicons?domain=${host}&sz=64`
+      : null;
+    return {
+      headline: a.headline,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.publishedAt,
+      sentiment: a.sentiment,
+      summary: a.summary || "",
+      imageUrl: a.imageUrl || null,
+      faviconUrl: favicon,
+      host,
+    };
+  });
+  const trusted = mapped.filter((a) =>
+    TRUSTED_NEWS_HOSTS.some((h) => a.host === h || a.host.endsWith("." + h))
+  );
+  return trusted.length >= 3 ? trusted : mapped;
+}
+
 // Popular assets to show in market overview for new users
 const MARKET_OVERVIEW_ASSETS = [
   { symbol: "BTC", name: "Bitcoin", category: "CRYPTO", provider: "crypto" },
@@ -179,7 +231,8 @@ export async function GET() {
     // Fetch news regardless
     let news: any[] = [];
     try {
-      news = await newsProvider.getMarketNews();
+      const raw = await newsProvider.getMarketNews();
+      news = curateNews(raw);
     } catch {}
 
     // If no holdings, return market overview data

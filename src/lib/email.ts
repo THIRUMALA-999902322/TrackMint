@@ -13,8 +13,9 @@ export async function sendAlertEmail(
   targetPrice: number,
   condition: "ABOVE" | "BELOW"
 ) {
-  const direction = condition === "ABOVE" ? "risen above" : "fallen below";
-  const subject = `🔔 Price Alert: ${symbol} has ${direction} $${targetPrice.toFixed(2)}`;
+  const subject = `TrackMint Alert: ${symbol} ${condition} $${targetPrice.toFixed(2)}`;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://trackmint.app";
+  const assetLink = `${appUrl}/asset/${encodeURIComponent(symbol)}`;
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; background: #0f1117; color: #e2e8f0; border-radius: 12px; overflow: hidden;">
@@ -27,7 +28,9 @@ export async function sendAlertEmail(
           <p style="margin: 0; color: #94a3b8; font-size: 14px;">Current Price</p>
           <p style="margin: 4px 0 0; font-size: 28px; font-weight: bold; color: ${condition === "ABOVE" ? "#00d68f" : "#ff6b6b"};">$${currentPrice.toFixed(2)}</p>
         </div>
-        <p style="color: #94a3b8;">Your target of <strong style="color: #e2e8f0;">$${targetPrice.toFixed(2)}</strong> has been ${direction === "risen above" ? "exceeded" : "breached"}.</p>
+        <p style="color: #94a3b8;">Condition: <strong style="color: #e2e8f0;">${condition}</strong></p>
+        <p style="color: #94a3b8;">Target: <strong style="color: #e2e8f0;">$${targetPrice.toFixed(2)}</strong></p>
+        <p style="margin-top: 24px;"><a href="${assetLink}" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: 500;">View ${symbol}</a></p>
         <p style="color: #64748b; font-size: 12px; margin-top: 24px;">This is an automated alert from TrackMint. Not financial advice.</p>
       </div>
     </div>

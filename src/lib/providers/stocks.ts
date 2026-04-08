@@ -52,15 +52,24 @@ export class StocksProvider implements MarketDataProvider {
     const data = await finnhubFetch("/search", { q: query });
     if (!data?.result) return [];
 
-    return data.result
-      .filter((r: any) => r.type === "Common Stock" || r.type === "ETP")
-      .slice(0, 10)
+    // Prefer US primary listings (symbols without a dot). Finnhub returns many
+    // regional variants like AAPL.MX, AAPL.RO — these cause the /quote endpoint
+    // to return 0 and break portfolio P/L. Sort primary listings first, and
+    // don't over-filter on type (CAVA and many valid tickers get excluded).
+    const results = (data.result as any[])
+      .filter((r: any) => r.symbol && !r.symbol.includes(":")) // drop crypto-style
       .map((r: any) => ({
-        symbol: r.symbol,
-        name: r.description,
+        symbol: r.symbol as string,
+        name: r.description as string,
         category: "STOCK" as const,
-        exchange: r.displaySymbol,
-      }));
+        exchange: r.displaySymbol as string,
+        _isPrimary: !r.symbol.includes("."),
+      }))
+      .sort((a, b) => Number(b._isPrimary) - Number(a._isPrimary))
+      .slice(0, 15)
+      .map(({ _isPrimary, ...rest }) => rest);
+
+    return results;
   }
 
   async getHistorical(symbol: string, range: string): Promise<OHLCV[]> {

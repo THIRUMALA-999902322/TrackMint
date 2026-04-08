@@ -36,6 +36,8 @@ export async function GET() {
       is_active: a.is_active,
       cooldown_minutes: a.cooldown_minutes,
       last_triggered_at: a.last_triggered_at,
+      notify_email: a.notify_email,
+      email_enabled: a.email_enabled,
       created_at: a.created_at,
     }));
 
@@ -74,6 +76,8 @@ export async function POST(request: Request) {
         condition_type: body.condition_type,
         target_price: body.target_price,
         cooldown_minutes: body.cooldown_minutes || 60,
+        notify_email: body.notify_email || null,
+        email_enabled: body.email_enabled !== undefined ? body.email_enabled : true,
       },
     });
 

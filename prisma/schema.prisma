@@ -175,6 +175,8 @@ model Alert {
   is_active         Boolean            @default(true)
   cooldown_minutes  Int                @default(60)
   last_triggered_at DateTime?
+  notify_email      String?
+  email_enabled     Boolean            @default(true)
   created_at        DateTime           @default(now())
 
   // Relations
