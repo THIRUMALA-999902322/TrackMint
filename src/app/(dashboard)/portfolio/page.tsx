@@ -40,6 +40,9 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AssetLogo } from "@/components/asset-logo";
+import { PortfolioDashboard } from "@/components/portfolio-dashboard";
+import { DollarSign, Wallet, Percent } from "lucide-react";
 
 interface AssetSearchResult {
   symbol: string;
@@ -491,55 +494,60 @@ export default function PortfolioPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card glass>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Value</p>
-            {isEmpty ? (
-              <p className="text-sm text-muted-foreground mt-1">
-                Add your first holding
-              </p>
-            ) : (
-              <p className="text-xl font-bold">{formatCurrency(totalValue)}</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card glass>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Invested</p>
-            {isEmpty ? (
-              <p className="text-sm text-muted-foreground mt-1">--</p>
-            ) : (
-              <p className="text-xl font-bold">{formatCurrency(totalCost)}</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card glass>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Unrealized P/L</p>
-            {isEmpty ? (
-              <p className="text-sm text-muted-foreground mt-1">--</p>
-            ) : (
-              <p className={cn("text-xl font-bold", getChangeColor(totalPL))}>
-                {formatCurrency(totalPL)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <Card glass>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Return</p>
-            {isEmpty ? (
-              <p className="text-sm text-muted-foreground mt-1">--</p>
-            ) : (
-              <p
-                className={cn("text-xl font-bold", getChangeColor(totalPLPct))}
-              >
-                {formatPercentage(totalPLPct)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {[
+          {
+            label: "Total Value",
+            value: isEmpty ? "Add your first holding" : formatCurrency(totalValue),
+            icon: DollarSign,
+            gradient: "from-blue-500/30 to-indigo-500/30 text-blue-400 border-blue-500/30",
+            color: "",
+          },
+          {
+            label: "Total Invested",
+            value: isEmpty ? "--" : formatCurrency(totalCost),
+            icon: Wallet,
+            gradient: "from-purple-500/30 to-fuchsia-500/30 text-purple-400 border-purple-500/30",
+            color: "",
+          },
+          {
+            label: "Unrealized P/L",
+            value: isEmpty ? "--" : formatCurrency(totalPL),
+            icon: TrendingUp,
+            gradient: "from-green-500/30 to-emerald-500/30 text-green-400 border-green-500/30",
+            color: isEmpty ? "" : getChangeColor(totalPL),
+          },
+          {
+            label: "Return",
+            value: isEmpty ? "--" : formatPercentage(totalPLPct),
+            icon: Percent,
+            gradient: "from-orange-500/30 to-amber-500/30 text-orange-400 border-orange-500/30",
+            color: isEmpty ? "" : getChangeColor(totalPLPct),
+          },
+        ].map((tile) => {
+          const Icon = tile.icon;
+          return (
+            <Card key={tile.label} glass>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div
+                  className={cn(
+                    "rounded-full border bg-gradient-to-br flex items-center justify-center h-11 w-11 shrink-0",
+                    tile.gradient
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{tile.label}</p>
+                  <p className={cn("text-xl font-bold truncate", tile.color)}>{tile.value}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      {/* Portfolio Dashboard (pie + performance + movers) */}
+      {holdings.length > 0 && <PortfolioDashboard holdings={holdings} />}
 
       {/* Holdings List */}
       {isLoading ? (
@@ -564,7 +572,7 @@ export default function PortfolioPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {holdings.map((h: any) => {
+          {holdings.map((h: any, idx: number) => {
             const priceLoaded = h.currentPrice && h.currentPrice > 0;
             const pl = priceLoaded
               ? (h.currentPrice - h.avg_buy_price) * h.quantity
@@ -575,7 +583,12 @@ export default function PortfolioPage() {
                 : 0;
 
             return (
-              <Card key={h.id} glass className="group">
+              <Card
+                key={h.id}
+                glass
+                className="group animate-fade-in-up opacity-0"
+                style={{ animationDelay: `${idx * 40}ms`, animationFillMode: "forwards" } as any}
+              >
                 <CardContent className="p-0">
                   <div className="flex items-center">
                     {/* Clickable main area */}
@@ -585,16 +598,24 @@ export default function PortfolioPage() {
                       onClick={() => router.push(`/asset/${h.symbol}`)}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <Badge
-                          className={cn(
-                            "text-[10px] border shrink-0",
-                            CATEGORY_COLORS[h.category] || ""
-                          )}
-                        >
-                          {getCategoryLabel(h.category)}
-                        </Badge>
+                        <AssetLogo
+                          symbol={h.symbol}
+                          category={h.category}
+                          logo={h.logo}
+                          size={40}
+                        />
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold">{h.symbol}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold">{h.symbol}</p>
+                            <Badge
+                              className={cn(
+                                "text-[9px] border shrink-0",
+                                CATEGORY_COLORS[h.category] || ""
+                              )}
+                            >
+                              {getCategoryLabel(h.category)}
+                            </Badge>
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">
                             {h.name}
                           </p>

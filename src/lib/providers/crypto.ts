@@ -1,6 +1,32 @@
 import { MarketDataProvider, PriceData, AssetSearchResult, OHLCV } from "./types";
+import { redis } from "@/lib/redis";
 
 const BASE_URL = "https://api.coingecko.com/api/v3";
+
+// Fetch and cache a crypto logo URL via CoinGecko search endpoint.
+// Cached in Redis for 7 days (key: logo:<SYMBOL>).
+export async function fetchCryptoLogo(symbol: string): Promise<string | undefined> {
+  const key = `logo:${symbol.toUpperCase()}`;
+  try {
+    const cached = await redis.get<string>(key);
+    if (cached) return cached;
+  } catch {}
+  try {
+    const res = await fetch(`${BASE_URL}/search?query=${encodeURIComponent(symbol)}`, {
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const coin = (data?.coins as any[])?.find((c) => c.symbol?.toUpperCase() === symbol.toUpperCase());
+    const logo: string | undefined = coin?.large || coin?.thumb;
+    if (logo) {
+      try { await redis.set(key, logo, { ex: 60 * 60 * 24 * 7 }); } catch {}
+    }
+    return logo;
+  } catch {
+    return undefined;
+  }
+}
 
 const SYMBOL_TO_ID: Record<string, string> = {
   BTC: "bitcoin", ETH: "ethereum", BNB: "binancecoin", SOL: "solana",
@@ -52,6 +78,7 @@ export class CryptoProvider implements MarketDataProvider {
 
     if (!data?.[id]) return null;
     const d = data[id];
+    const logo = await fetchCryptoLogo(symbol).catch(() => undefined);
 
     return {
       symbol: symbol.toUpperCase(),
@@ -65,6 +92,7 @@ export class CryptoProvider implements MarketDataProvider {
       lastUpdated: d.last_updated_at
         ? new Date(d.last_updated_at * 1000).toISOString()
         : new Date().toISOString(),
+      logo,
     };
   }
 
@@ -104,11 +132,12 @@ export class CryptoProvider implements MarketDataProvider {
     const data = await cgFetch("/search", { query });
     if (!data?.coins) return [];
 
-    return data.coins.slice(0, 10).map((c: any) => ({
+    return data.coins.slice(0, 12).map((c: any) => ({
       symbol: c.symbol?.toUpperCase() || c.id,
       name: c.name,
       category: "CRYPTO" as const,
       logoUrl: c.thumb,
+      logo: c.large || c.thumb,
     }));
   }
 

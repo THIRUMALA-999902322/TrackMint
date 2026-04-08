@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercentage, cn, getCategoryLabel } from "@/lib/utils";
 import { Search, Plus, X, TrendingUp, TrendingDown, Eye, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AssetLogo } from "@/components/asset-logo";
 
 const categoryBadgeColors: Record<string, string> = {
   STOCK: "bg-blue-500/15 text-blue-500 border-blue-500/20",
@@ -33,6 +34,7 @@ interface WatchlistItem {
   price: number;
   changePercent: number;
   createdAt: string;
+  logo?: string | null;
 }
 
 function Sparkline({ symbol, category, positive }: { symbol: string; category: string; positive: boolean }) {
@@ -110,13 +112,18 @@ function TickerCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Badge
-            variant="outline"
-            className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(item.category))}
-          >
-            {getCategoryLabel(item.category)}
-          </Badge>
-          <span className="text-base font-bold tracking-tight truncate">{item.symbol}</span>
+          <AssetLogo symbol={item.symbol} category={item.category} logo={item.logo} size={36} />
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base font-bold tracking-tight truncate">{item.symbol}</span>
+              <Badge
+                variant="outline"
+                className={cn("text-[9px] shrink-0 border", getCategoryBadgeClass(item.category))}
+              >
+                {getCategoryLabel(item.category)}
+              </Badge>
+            </div>
+          </div>
         </div>
         <Button
           size="icon"
@@ -290,6 +297,7 @@ export default function WatchlistPage() {
                         className="flex items-center justify-between px-3 py-2 hover:bg-accent/50 cursor-pointer"
                       >
                         <div className="flex items-center gap-3 min-w-0">
+                          <AssetLogo symbol={r.symbol} category={r.category} logo={r.logo || r.logoUrl} size={28} />
                           <Badge
                             variant="outline"
                             className={cn("text-xs shrink-0 border", getCategoryBadgeClass(r.category))}

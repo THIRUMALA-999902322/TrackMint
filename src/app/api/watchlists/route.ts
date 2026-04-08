@@ -40,6 +40,7 @@ export async function GET() {
       watchlist.items.map(async (item) => {
         let price = 0;
         let changePercent = 0;
+        let logo: string | undefined;
 
         // Try cache first
         const cached = await getCachedPrice(item.asset.symbol).catch(() => null);
@@ -47,6 +48,7 @@ export async function GET() {
           const p = typeof cached === "string" ? JSON.parse(cached) : cached;
           price = p.price || 0;
           changePercent = p.changePercent24h || 0;
+          logo = p.logo;
         }
 
         // Cache miss — fetch from provider
@@ -57,6 +59,7 @@ export async function GET() {
             if (priceData && priceData.price > 0) {
               price = priceData.price;
               changePercent = priceData.changePercent24h || 0;
+              logo = priceData.logo;
               const ttl = item.asset.category === "METAL" ? 14400 : 300;
               await setCachedPrice(item.asset.symbol, priceData, ttl).catch(() => {});
             }
@@ -69,6 +72,7 @@ export async function GET() {
           symbol: item.asset.symbol,
           name: item.asset.name,
           category: item.asset.category,
+          logo: logo || item.asset.logo_url || null,
           price,
           changePercent,
           createdAt: item.created_at,

@@ -8,6 +8,7 @@ export interface PriceData {
   volume24h: number;
   marketCap?: number;
   lastUpdated: string;
+  logo?: string;
 }
 
 export interface AssetSearchResult {
@@ -16,6 +17,7 @@ export interface AssetSearchResult {
   category: "STOCK" | "CRYPTO" | "METAL";
   exchange?: string;
   logoUrl?: string;
+  logo?: string;
 }
 
 export interface OHLCV {

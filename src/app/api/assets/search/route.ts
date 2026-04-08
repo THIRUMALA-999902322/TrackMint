@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { stocksProvider, cryptoProvider, metalsProvider } from "@/lib/providers";
-import { getCachedPrice, setCachedPrice } from "@/lib/redis";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,12 +16,14 @@ export async function GET(request: Request) {
       metalsProvider.search(query).catch(() => []),
     ]);
 
-    // Interleave results: take up to 8 stocks, 5 crypto, 4 metals, then fill remainder
+    // Generous per-category caps: stocks 12, crypto 8, metals 5. Final cap 20.
+    // Stocks don't get logo here (N+1 profile2 calls would kill the request);
+    // UI falls back to a gradient icon. Crypto includes logo from CoinGecko.
     const limited = [
-      ...stocks.slice(0, 8),
-      ...crypto.slice(0, 5),
-      ...metals.slice(0, 4),
-    ].slice(0, 15);
+      ...stocks.slice(0, 12),
+      ...crypto.slice(0, 8),
+      ...metals.slice(0, 5),
+    ].slice(0, 20);
     return NextResponse.json({ data: limited });
   } catch (error) {
     console.error("Search error:", error);

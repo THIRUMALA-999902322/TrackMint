@@ -18,13 +18,18 @@ async function getUserId() {
   return dbUser.id;
 }
 
-async function fetchPrice(symbol: string, category: string): Promise<{ price: number; changePercent: number }> {
+async function fetchPrice(
+  symbol: string,
+  category: string
+): Promise<{ price: number; changePercent: number; logo?: string }> {
   // Check cache first
   try {
     const cached = await getCachedPrice(symbol);
     if (cached) {
       const p = typeof cached === "string" ? JSON.parse(cached) : cached;
-      if (p.price > 0) return { price: p.price, changePercent: p.changePercent24h || 0 };
+      if (p.price > 0) {
+        return { price: p.price, changePercent: p.changePercent24h || 0, logo: p.logo };
+      }
     }
   } catch {}
 
@@ -35,7 +40,11 @@ async function fetchPrice(symbol: string, category: string): Promise<{ price: nu
     if (priceData && priceData.price > 0) {
       const ttl = category === "METAL" ? 14400 : 300;
       await setCachedPrice(symbol, priceData, ttl).catch(() => {});
-      return { price: priceData.price, changePercent: priceData.changePercent24h || 0 };
+      return {
+        price: priceData.price,
+        changePercent: priceData.changePercent24h || 0,
+        logo: priceData.logo,
+      };
     }
   } catch {}
 
@@ -55,7 +64,7 @@ export async function GET() {
 
     const enriched = await Promise.all(
       holdings.map(async (h) => {
-        const { price: currentPrice, changePercent } = await fetchPrice(h.asset.symbol, h.asset.category);
+        const { price: currentPrice, changePercent, logo } = await fetchPrice(h.asset.symbol, h.asset.category);
         const qty = Number(h.quantity);
         const buyPrice = Number(h.avg_buy_price);
         return {
@@ -68,6 +77,7 @@ export async function GET() {
           fees: Number(h.fees),
           buy_date: h.buy_date,
           notes: h.notes,
+          logo: logo || h.asset.logo_url || null,
           currentPrice,
           changePercent,
           currentValue: currentPrice * qty,
