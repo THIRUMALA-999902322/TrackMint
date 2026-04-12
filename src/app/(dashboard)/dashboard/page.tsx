@@ -6,6 +6,10 @@ import { AllocationChart } from "@/components/dashboard/allocation-chart";
 import { PerformanceChart } from "@/components/dashboard/performance-chart";
 import { RecentNews } from "@/components/dashboard/recent-news";
 import { TopMovers } from "@/components/dashboard/top-movers";
+import { MarketIndices } from "@/components/dashboard/market-indices";
+import { FearGreedGauge } from "@/components/dashboard/fear-greed-gauge";
+import { SectorHeatmap } from "@/components/dashboard/sector-heatmap";
+import { TopMoversToday } from "@/components/dashboard/top-movers-today";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/utils";
 
@@ -29,6 +33,11 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground text-sm">Loading your portfolio...</p>
         </div>
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-[72px] min-w-[180px] rounded-lg flex-shrink-0" />
+          ))}
+        </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
@@ -45,6 +54,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
@@ -66,6 +76,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Live Market Indices Bar */}
+      <MarketIndices />
+
+      {/* Fear & Greed + Sectors + Top Movers */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <FearGreedGauge />
+        <SectorHeatmap />
+        <TopMoversToday />
+      </div>
+
+      {/* Portfolio Stats */}
       <StatsCards
         totalValue={isMarketOverview ? (d.market_total || 0) : (d.total_value || 0)}
         totalPL={d.total_pnl || 0}
@@ -77,6 +98,7 @@ export default function DashboardPage() {
         isMarketOverview={isMarketOverview}
       />
 
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <PerformanceChart

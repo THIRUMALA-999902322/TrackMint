@@ -46,6 +46,7 @@ model User {
   digest_time    String   @default("07:00")
   digest_enabled Boolean  @default(true)
   is_verified    Boolean  @default(false)
+  is_admin       Boolean  @default(false)
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
@@ -69,6 +70,7 @@ model Asset {
   category        AssetCategory
   exchange        String?
   source_provider String
+  source_id       String?       // Provider-specific ID (e.g. CoinGecko coin id like "andy-the-andy-token")
   logo_url        String?
   metadata_json   Json?
   created_at      DateTime      @default(now())
@@ -153,6 +155,12 @@ model JournalEntry {
   pnl_amount   Decimal  @db.Decimal(20, 8)
   strategy_tag String?
   notes        String?
+  symbol       String?
+  category     String?
+  side         String?  // BUY or SELL
+  entry_price  Decimal? @db.Decimal(20, 8)
+  exit_price   Decimal? @db.Decimal(20, 8)
+  quantity     Decimal? @db.Decimal(20, 8)
   created_at   DateTime @default(now())
 
   // Relations
@@ -161,6 +169,7 @@ model JournalEntry {
   @@index([user_id])
   @@index([user_id, entry_date])
   @@index([strategy_tag])
+  @@index([symbol])
   @@map("journal_entries")
 }
 

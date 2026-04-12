@@ -112,7 +112,13 @@ export async function POST(request: Request) {
           name: body.name || body.symbol,
           category: body.category,
           source_provider: body.category === "STOCK" ? "finnhub" : body.category === "CRYPTO" ? "coingecko" : "goldapi",
+          source_id: body.sourceId || null,
         },
+      });
+    } else if (!asset.source_id && body.sourceId) {
+      asset = await prisma.asset.update({
+        where: { id: asset.id },
+        data: { source_id: body.sourceId },
       });
     }
 

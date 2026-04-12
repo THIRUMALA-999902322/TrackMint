@@ -42,6 +42,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { AssetLogo } from "@/components/asset-logo";
 import { PortfolioDashboard } from "@/components/portfolio-dashboard";
+import { PriceChartPicker } from "@/components/portfolio/price-chart-picker";
 import { DollarSign, Wallet, Percent } from "lucide-react";
 
 interface AssetSearchResult {
@@ -392,6 +393,21 @@ export default function PortfolioPage() {
                   </div>
                 )}
               </div>
+
+              {/* Price Chart Picker */}
+              {selectedAsset && (
+                <PriceChartPicker
+                  symbol={selectedAsset.symbol}
+                  category={selectedAsset.category}
+                  onPriceSelect={(price, date) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      buyPrice: price.toString(),
+                      buyDate: date,
+                    }));
+                  }}
+                />
+              )}
 
               {/* Quantity + Buy Price */}
               <div className="grid grid-cols-2 gap-4">

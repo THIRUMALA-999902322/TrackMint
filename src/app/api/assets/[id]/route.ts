@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderForCategory } from "@/lib/providers";
+import { CryptoProvider } from "@/lib/providers/crypto";
+import { prisma } from "@/lib/db";
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const { searchParams } = new URL(request.url);
@@ -8,12 +10,27 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const symbol = params.id;
 
   try {
+    // Look up asset in DB for source_id (needed for non-hardcoded crypto)
+    const dbAsset = await prisma.asset.findFirst({
+      where: { symbol: symbol.toUpperCase() },
+    }).catch(() => null);
+
     let historical: any[] = [];
+
+    // Helper to fetch historical, passing source_id for crypto
+    const fetchHistorical = async (cat: string) => {
+      if (cat === "CRYPTO") {
+        const cryptoProvider = getProviderForCategory(cat) as CryptoProvider;
+        const sourceId = dbAsset?.category === "CRYPTO" ? (dbAsset.source_id ?? undefined) : undefined;
+        return cryptoProvider.getHistorical(symbol, range, sourceId).catch(() => []);
+      }
+      const provider = getProviderForCategory(cat);
+      return provider.getHistorical(symbol, range as any).catch(() => []);
+    };
 
     // If category is known, try that provider first
     if (category) {
-      const provider = getProviderForCategory(category);
-      historical = await provider.getHistorical(symbol, range as any).catch(() => []);
+      historical = await fetchHistorical(category);
     }
 
     // If still empty, try all providers
@@ -21,8 +38,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       const providers = ["STOCK", "CRYPTO", "METAL"];
       for (const cat of providers) {
         if (cat === category) continue; // skip already tried
-        const provider = getProviderForCategory(cat);
-        historical = await provider.getHistorical(symbol, range as any).catch(() => []);
+        historical = await fetchHistorical(cat);
         if (historical.length > 0) break;
       }
     }

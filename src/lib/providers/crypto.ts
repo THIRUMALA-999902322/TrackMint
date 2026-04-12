@@ -42,8 +42,49 @@ function getHeaders(): HeadersInit {
   return key ? { "x-cg-demo-api-key": key, Accept: "application/json" } : { Accept: "application/json" };
 }
 
-function symbolToId(symbol: string): string {
-  return SYMBOL_TO_ID[symbol.toUpperCase()] || symbol.toLowerCase();
+/**
+ * Resolve a symbol to its CoinGecko coin ID.
+ * 1. Check the hardcoded map.
+ * 2. Check Redis cache (key: cgid:<SYMBOL>, TTL 7 days).
+ * 3. If a sourceId is provided (from DB/search), use that directly and cache it.
+ * 4. Otherwise query the CoinGecko /search endpoint to find the correct ID.
+ */
+async function resolveId(symbol: string, sourceId?: string): Promise<string> {
+  const upper = symbol.toUpperCase();
+
+  // 1. Hardcoded map
+  if (SYMBOL_TO_ID[upper]) return SYMBOL_TO_ID[upper];
+
+  // 2. Redis cache
+  const cacheKey = `cgid:${upper}`;
+  try {
+    const cached = await redis.get<string>(cacheKey);
+    if (cached) return cached;
+  } catch {}
+
+  // 3. Provided sourceId (from DB)
+  if (sourceId) {
+    try { await redis.set(cacheKey, sourceId, { ex: 60 * 60 * 24 * 7 }); } catch {}
+    return sourceId;
+  }
+
+  // 4. Look up via CoinGecko search
+  try {
+    const data = await cgFetch("/search", { query: symbol });
+    if (data?.coins?.length) {
+      // Prefer exact symbol match
+      const exact = (data.coins as any[]).find(
+        (c) => c.symbol?.toUpperCase() === upper
+      );
+      const coin = exact || data.coins[0];
+      const id = coin.id as string;
+      try { await redis.set(cacheKey, id, { ex: 60 * 60 * 24 * 7 }); } catch {}
+      return id;
+    }
+  } catch {}
+
+  // Fallback: lowercase symbol (may or may not work)
+  return symbol.toLowerCase();
 }
 
 async function cgFetch(endpoint: string, params: Record<string, string> = {}) {
@@ -65,8 +106,12 @@ async function cgFetch(endpoint: string, params: Record<string, string> = {}) {
 }
 
 export class CryptoProvider implements MarketDataProvider {
-  async getPrice(symbol: string): Promise<PriceData | null> {
-    const id = symbolToId(symbol);
+  /**
+   * Get price for a crypto symbol. Optionally pass a sourceId (CoinGecko coin id)
+   * to avoid lookup overhead for non-hardcoded symbols.
+   */
+  async getPrice(symbol: string, sourceId?: string): Promise<PriceData | null> {
+    const id = await resolveId(symbol, sourceId);
     const data = await cgFetch("/simple/price", {
       ids: id,
       vs_currencies: "usd",
@@ -97,7 +142,9 @@ export class CryptoProvider implements MarketDataProvider {
   }
 
   async getPrices(symbols: string[]): Promise<PriceData[]> {
-    const ids = symbols.map(symbolToId).join(",");
+    // Resolve all IDs (may hit Redis cache for non-hardcoded)
+    const resolvedIds = await Promise.all(symbols.map((s) => resolveId(s)));
+    const ids = resolvedIds.join(",");
     const data = await cgFetch("/simple/price", {
       ids,
       vs_currencies: "usd",
@@ -109,8 +156,8 @@ export class CryptoProvider implements MarketDataProvider {
     if (!data) return [];
 
     return symbols
-      .map((symbol) => {
-        const id = symbolToId(symbol);
+      .map((symbol, idx) => {
+        const id = resolvedIds[idx];
         const d = data[id];
         if (!d) return null;
         return {
@@ -138,11 +185,12 @@ export class CryptoProvider implements MarketDataProvider {
       category: "CRYPTO" as const,
       logoUrl: c.thumb,
       logo: c.large || c.thumb,
+      sourceId: c.id, // CoinGecko coin ID (e.g. "andy-the-andy-token")
     }));
   }
 
-  async getHistorical(symbol: string, range: string): Promise<OHLCV[]> {
-    const id = symbolToId(symbol);
+  async getHistorical(symbol: string, range: string, sourceId?: string): Promise<OHLCV[]> {
+    const id = await resolveId(symbol, sourceId);
     const daysMap: Record<string, string> = {
       "1D": "1", "1W": "7", "1M": "30", "3M": "90", "1Y": "365", "ALL": "max",
     };

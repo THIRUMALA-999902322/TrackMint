@@ -18,6 +18,7 @@ export interface AssetSearchResult {
   exchange?: string;
   logoUrl?: string;
   logo?: string;
+  sourceId?: string; // Provider-specific ID (e.g. CoinGecko coin id)
 }
 
 export interface OHLCV {

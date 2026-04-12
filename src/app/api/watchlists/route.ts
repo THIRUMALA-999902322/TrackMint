@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getProviderForCategory } from "@/lib/providers";
+import { CryptoProvider } from "@/lib/providers/crypto";
 import { getCachedPrice, setCachedPrice } from "@/lib/redis";
 
 async function getUserId() {
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { symbol, name, category } = body;
+  const { symbol, name, category, sourceId } = body;
 
   try {
     // Get or create asset
@@ -107,7 +108,14 @@ export async function POST(request: Request) {
           name: name || symbol,
           category,
           source_provider: category === "STOCK" ? "finnhub" : category === "CRYPTO" ? "coingecko" : "goldapi",
+          source_id: sourceId || null,
         },
+      });
+    } else if (!asset.source_id && sourceId) {
+      // Backfill source_id if it was missing
+      asset = await prisma.asset.update({
+        where: { id: asset.id },
+        data: { source_id: sourceId },
       });
     }
 

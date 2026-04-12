@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderForCategory } from "@/lib/providers";
+import { CryptoProvider } from "@/lib/providers/crypto";
 import { getCachedPrice, setCachedPrice } from "@/lib/redis";
 import { prisma } from "@/lib/db";
 
@@ -7,7 +8,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   const symbol = params.id.toUpperCase();
 
   try {
-    // Look up asset in DB for name/category hint
+    // Look up asset in DB for name/category hint and source_id
     const dbAsset = await prisma.asset.findFirst({
       where: { symbol },
     }).catch(() => null);
@@ -27,8 +28,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       : ["STOCK", "CRYPTO", "METAL"];
 
     for (const cat of categoriesToTry) {
-      const provider = getProviderForCategory(cat);
-      const price = await provider.getPrice(symbol).catch(() => null);
+      let price;
+      // For crypto, pass the source_id so CoinGecko ID resolves correctly
+      if (cat === "CRYPTO") {
+        const cryptoProvider = getProviderForCategory(cat) as CryptoProvider;
+        const sourceId = dbAsset?.category === "CRYPTO" ? (dbAsset.source_id ?? undefined) : undefined;
+        price = await cryptoProvider.getPrice(symbol, sourceId).catch(() => null);
+      } else {
+        const provider = getProviderForCategory(cat);
+        price = await provider.getPrice(symbol).catch(() => null);
+      }
+
       if (price && price.price > 0) {
         const result = {
           ...price,

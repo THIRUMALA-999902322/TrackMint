@@ -146,7 +146,7 @@ export class StocksProvider implements MarketDataProvider {
       .map(({ _isPrimary, ...rest }) => rest);
 
     try {
-      await redis.set(cacheKey, results, { ex: 60 * 60 });
+      await redis.set(cacheKey, results, { ex: 60 * 10 }); // 10 min TTL to avoid stale results
     } catch {}
 
     return results;
