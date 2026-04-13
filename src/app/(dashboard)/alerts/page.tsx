@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate, cn, getCategoryLabel } from "@/lib/utils";
-import { Plus, Bell, BellOff, ArrowUp, ArrowDown, Trash2, Search, X, Loader2, TrendingUp, Pencil } from "lucide-react";
+import { Plus, Bell, BellOff, ArrowUp, ArrowDown, Trash2, Search, X, Loader2, TrendingUp, Pencil, Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 function getCategoryBadgeClass(cat: string) {
@@ -210,6 +210,26 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Bell className="h-6 w-6" /> Price Alerts</h1>
           <p className="text-muted-foreground text-sm">{activeCount} active alerts</p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/alerts/test-email", { method: "POST" });
+                const data = await res.json();
+                if (data.success) {
+                  toast({ title: "Test email sent!", description: data.message || "Check your inbox" });
+                } else {
+                  toast({ title: "Email failed", description: data.message || "Check email configuration", variant: "error" });
+                }
+              } catch {
+                toast({ title: "Error", description: "Failed to send test email", variant: "error" });
+              }
+            }}
+          >
+            <Send className="h-3.5 w-3.5 mr-1.5" /> Test Email
+          </Button>
         <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> New Alert</Button></DialogTrigger>
           <DialogContent className="sm:max-w-md">
@@ -364,6 +384,7 @@ export default function AlertsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {isLoading ? (

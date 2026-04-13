@@ -27,7 +27,7 @@ function AnimatedValue({ value, className }: { value: string; className?: string
   return (
     <p
       className={cn(
-        "text-xl font-bold transition-all duration-500",
+        "text-base sm:text-xl font-bold transition-all duration-500",
         displayed ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1",
         className
       )}
@@ -110,10 +110,10 @@ export function StatsCards({
           />
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-muted-foreground font-medium">{stat.label}</span>
+              <span className="text-xs text-muted-foreground font-medium truncate mr-2">{stat.label}</span>
               <div
                 className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center",
+                  "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
                   iconBgColors[stat.label] || "bg-muted/50"
                 )}
               >
@@ -127,10 +127,13 @@ export function StatsCards({
             </div>
             <AnimatedValue
               value={stat.value}
-              className={stat.color === "text-primary" || stat.color === "text-violet-500" || stat.color === "text-muted-foreground" ? "" : stat.color}
+              className={cn(
+                "truncate",
+                stat.color === "text-primary" || stat.color === "text-violet-500" || stat.color === "text-muted-foreground" ? "" : stat.color
+              )}
             />
             {stat.sub && (
-              <p className={cn("text-xs mt-1 font-medium", isEmpty ? "text-muted-foreground" : stat.color)}>
+              <p className={cn("text-xs mt-1 font-medium truncate", isEmpty ? "text-muted-foreground" : stat.color)}>
                 {stat.sub}
               </p>
             )}

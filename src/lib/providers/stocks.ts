@@ -26,17 +26,38 @@ async function finnhubFetch(endpoint: string, params: Record<string, string> = {
   }
 }
 
+// Try multiple Yahoo Finance endpoints (query1 and query2) to handle IP blocking
+const YAHOO_HOSTS = [
+  "https://query1.finance.yahoo.com",
+  "https://query2.finance.yahoo.com",
+];
+
+async function yahooChartFetch(symbol: string, interval: string, range: string): Promise<any | null> {
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (json?.chart?.result?.[0]) return json.chart.result[0];
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 // Fetch the public Yahoo v8 chart endpoint as a fallback when Finnhub fails
 // or returns a 0 price (rate-limit, regional symbol, etc.).
 async function yahooQuote(symbol: string): Promise<{ price: number; changePercent: number } | null> {
   try {
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`,
-      { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 300 } }
-    );
-    if (!res.ok) return null;
-    const json = await res.json();
-    const result = json?.chart?.result?.[0];
+    const result = await yahooChartFetch(symbol, "1d", "5d");
     const meta = result?.meta;
     if (!meta?.regularMarketPrice) return null;
     const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
@@ -194,13 +215,7 @@ export class StocksProvider implements MarketDataProvider {
         "ALL": { range: "max", interval: "1wk" },
       };
       const cfg = yRangeMap[range] || yRangeMap["1M"];
-      const res = await fetch(
-        `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}?interval=${cfg.interval}&range=${cfg.range}`,
-        { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 300 } }
-      );
-      if (!res.ok) return [];
-      const json = await res.json();
-      const r = json?.chart?.result?.[0];
+      const r = await yahooChartFetch(symbol.toUpperCase(), cfg.interval, cfg.range);
       const timestamps: number[] = r?.timestamp || [];
       const q = r?.indicators?.quote?.[0];
       if (!q || timestamps.length === 0) return [];

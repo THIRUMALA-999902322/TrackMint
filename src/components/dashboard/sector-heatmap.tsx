@@ -17,14 +17,14 @@ function getSectorBg(pct: number): string {
   if (pct > 0) {
     if (abs >= 2) return "bg-emerald-600 text-white";
     if (abs >= 1) return "bg-emerald-500/80 text-white";
-    if (abs >= 0.5) return "bg-emerald-500/50 text-emerald-100";
-    return "bg-emerald-500/25 text-emerald-200";
+    if (abs >= 0.5) return "bg-emerald-500/40 text-emerald-700 dark:text-emerald-200";
+    return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300";
   }
   if (pct < 0) {
     if (abs >= 2) return "bg-red-600 text-white";
     if (abs >= 1) return "bg-red-500/80 text-white";
-    if (abs >= 0.5) return "bg-red-500/50 text-red-100";
-    return "bg-red-500/25 text-red-200";
+    if (abs >= 0.5) return "bg-red-500/40 text-red-700 dark:text-red-200";
+    return "bg-red-500/20 text-red-700 dark:text-red-300";
   }
   return "bg-muted text-muted-foreground";
 }

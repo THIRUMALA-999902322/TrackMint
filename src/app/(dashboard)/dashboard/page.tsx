@@ -10,6 +10,8 @@ import { MarketIndices } from "@/components/dashboard/market-indices";
 import { FearGreedGauge } from "@/components/dashboard/fear-greed-gauge";
 import { SectorHeatmap } from "@/components/dashboard/sector-heatmap";
 import { TopMoversToday } from "@/components/dashboard/top-movers-today";
+import { WelcomeBanner } from "@/components/dashboard/welcome-banner";
+import { QuickSearch } from "@/components/dashboard/quick-search";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/utils";
 
@@ -55,7 +57,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground text-sm">
@@ -63,18 +65,20 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {isMarketOverview && (
-            <span className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full font-medium">
-              Market Overview
-            </span>
-          )}
+          <QuickSearch />
           {d.last_updated && (
-            <p className="text-xs text-muted-foreground">
-              Updated {formatDate(d.last_updated, "h:mm a")}
-            </p>
+            <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
+              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-xs text-muted-foreground">
+                {formatDate(d.last_updated, "h:mm a")}
+              </p>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Welcome Banner for new users */}
+      {isMarketOverview && <WelcomeBanner />}
 
       {/* Live Market Indices Bar */}
       <MarketIndices />
@@ -106,7 +110,7 @@ export default function DashboardPage() {
             title={isMarketOverview ? "Market Performance (BTC)" : "Portfolio Performance"}
           />
         </div>
-        <AllocationChart data={d.allocations || []} />
+        <AllocationChart data={isMarketOverview ? [] : (d.allocations || [])} />
       </div>
 
       <TopMovers

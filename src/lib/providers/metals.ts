@@ -14,31 +14,43 @@ const METALS: Record<string, { symbol: string; name: string; yahooSymbol: string
 // futures, so no division is needed. If a price looks unreasonable we leave it as-is
 // and let the cache smooth things out.
 
+const YAHOO_HOSTS = [
+  "https://query1.finance.yahoo.com",
+  "https://query2.finance.yahoo.com",
+];
+
 async function yahooMetalPrice(
   yahooSymbol: string
 ): Promise<{ price: number; changePercent: number; high: number; low: number } | null> {
-  try {
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=5d`,
-      { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 600 } }
-    );
-    if (!res.ok) return null;
-    const json = await res.json();
-    const meta = json?.chart?.result?.[0]?.meta;
-    if (!meta?.regularMarketPrice) return null;
+  const path = `/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=5d`;
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const meta = json?.chart?.result?.[0]?.meta;
+      if (!meta?.regularMarketPrice) continue;
 
-    const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-    const changePercent = prev > 0 ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0;
+      const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+      const changePercent = prev > 0 ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0;
 
-    return {
-      price: meta.regularMarketPrice,
-      changePercent,
-      high: meta.regularMarketDayHigh || meta.regularMarketPrice,
-      low: meta.regularMarketDayLow || meta.regularMarketPrice,
-    };
-  } catch {
-    return null;
+      return {
+        price: meta.regularMarketPrice,
+        changePercent,
+        high: meta.regularMarketDayHigh || meta.regularMarketPrice,
+        low: meta.regularMarketDayLow || meta.regularMarketPrice,
+      };
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 function getGoldApiKey(): string {
@@ -127,30 +139,37 @@ export class MetalsProvider implements MarketDataProvider {
     };
     const cfg = rangeMap[range] || rangeMap["1M"];
 
-    try {
-      const res = await fetch(
-        `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(metal.yahooSymbol)}?interval=${cfg.interval}&range=${cfg.range}`,
-        { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 600 } }
-      );
-      if (!res.ok) return [];
-      const json = await res.json();
-      const r = json?.chart?.result?.[0];
-      const timestamps: number[] = r?.timestamp || [];
-      const q = r?.indicators?.quote?.[0];
-      if (!q || timestamps.length === 0) return [];
+    const path = `/v8/finance/chart/${encodeURIComponent(metal.yahooSymbol)}?interval=${cfg.interval}&range=${cfg.range}`;
+    for (const host of YAHOO_HOSTS) {
+      try {
+        const res = await fetch(`${host}${path}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const r = json?.chart?.result?.[0];
+        const timestamps: number[] = r?.timestamp || [];
+        const q = r?.indicators?.quote?.[0];
+        if (!q || timestamps.length === 0) continue;
 
-      return timestamps
-        .map((t, i) => ({
-          time: t,
-          open: q.open?.[i] ?? 0,
-          high: q.high?.[i] ?? 0,
-          low: q.low?.[i] ?? 0,
-          close: q.close?.[i] ?? 0,
-          volume: q.volume?.[i] ?? 0,
-        }))
-        .filter((c) => c.close > 0);
-    } catch {
-      return [];
+        return timestamps
+          .map((t, i) => ({
+            time: t,
+            open: q.open?.[i] ?? 0,
+            high: q.high?.[i] ?? 0,
+            low: q.low?.[i] ?? 0,
+            close: q.close?.[i] ?? 0,
+            volume: q.volume?.[i] ?? 0,
+          }))
+          .filter((c) => c.close > 0);
+      } catch {
+        continue;
+      }
     }
+    return [];
   }
 }

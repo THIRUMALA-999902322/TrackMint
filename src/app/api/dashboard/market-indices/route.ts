@@ -28,34 +28,45 @@ const FALLBACK: IndexData[] = [
   { symbol: "GC=F", name: "Gold", value: 2338.4, change: 8.2, changePercent: 0.35 },
 ];
 
+const YAHOO_HOSTS = [
+  "https://query1.finance.yahoo.com",
+  "https://query2.finance.yahoo.com",
+];
+
 async function fetchIndex(symbol: string, name: string): Promise<IndexData | null> {
-  try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const meta = json?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const meta = json?.chart?.result?.[0]?.meta;
+      if (!meta) continue;
 
-    const currentPrice = meta.regularMarketPrice ?? 0;
-    const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? currentPrice;
-    const change = currentPrice - previousClose;
-    const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+      const currentPrice = meta.regularMarketPrice ?? 0;
+      const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? currentPrice;
+      const change = currentPrice - previousClose;
+      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
 
-    return {
-      symbol,
-      name,
-      value: currentPrice,
-      change: Math.round(change * 100) / 100,
-      changePercent: Math.round(changePercent * 100) / 100,
-    };
-  } catch (e) {
-    console.error(`Failed to fetch index ${symbol}:`, e);
-    return null;
+      return {
+        symbol,
+        name,
+        value: currentPrice,
+        change: Math.round(change * 100) / 100,
+        changePercent: Math.round(changePercent * 100) / 100,
+      };
+    } catch (e) {
+      console.error(`Failed to fetch index ${symbol} from ${host}:`, e);
+      continue;
+    }
   }
+  return null;
 }
 
 export async function GET() {
